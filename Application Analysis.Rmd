@@ -1,0 +1,421 @@
+---
+title: "Application Analysis"
+author: "Cheryl Calhoun"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document: null
+  word_document: default
+  number_sections: yes
+geometry: margin=1in
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE, echo=TRUE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# List of packages required for this analysis
+pkg <- c("dplyr", "knitr", "devtools", "DT", "xtable", "tidyverse")
+
+# Check if packages are not installed and assign the
+# names of the packages not installed to the variable new.pkg
+new.pkg <- pkg[!(pkg %in% installed.packages())]
+
+# If there are any packages in the list that aren't installed,
+# install them
+if (length(new.pkg)) {
+  install.packages(new.pkg, repos = "http://cran.rstudio.com")
+}
+
+# Load the packages into R
+library(dplyr)
+library(knitr)
+library(DT)
+library(xtable)
+library(tidyverse)
+#library(stringr)
+#library(formattable)
+#library(plyr)
+#library(stargazer)
+
+# Set the working directory to the directory containing the data files.
+# setwd("C:/Users/cdcal/Documents/GitHub/Dissertation")
+
+# Set options for printing tables with kable
+options(knitr.kable.NA = ".",
+        digits=2)
+
+opts_chunk$set(fig.path='figure/minimal-', fig.align='center', fig.show='hold')
+opts_chunk$set(out.width='1000px', dpi=200)
+# options(replace.assign=TRUE,width=120)
+
+```
+
+# Analyzing the Application Data
+
+This document focuses on the analysis of data collected during the application process. The R code and the cleansed and tidied data files used in this analysis are available for review at https://github.com/cdc19/Dissertation. For more information about the application process, including the code book for the application data set, and the data collection and tidying processes, see `TidyDataProcessing.pdf`. 
+
+**Notes:   **    
+
+* The applications for the 2012 cohort were not retained by the program. Some data was collected from other sources, including program documentation, to provide as complete a data set as possible.
+* All references to the program name, the university, and other identifiable indicators have been replaced with generic terms surrounded by asterisk.  Ex. `*program*`, `*university*`, `*company*`, etc. 
+
+## Preparing the Application and Learner dataframes
+
+Before beginning the analysis, the anonymized application data set is read from `Applicants.csv` and assigned to the `Applicants` dataframe.  The data set stored in `Applicants.csv` was created by the R Markup document `TidyDataProcessing.Rmd`.  The `Applicants` dataframe is then filtered to extract the rows corresponding to learners data and create the dataframe `Learners`. Learners are defined as the applicants who accepted the invitation to attend the program, attended at least one session, and were assigned to a project team.   
+
+The `Learners` dataframe will be used for all data analysis after the initial Application Decision table creation. This will focus the application analysis on the responses from learners who ultimately participated in the program.
+
+
+```{r Load Data, echo=TRUE}
+
+## Load tidy & anonymized Applicants data set.
+Applicants <- read.csv("data/Applicants.csv", header=TRUE, sep=",", na.strings = c("", "NA"))
+
+## Filter applicants list for learners who participated in program. 
+Learners <- filter(Applicants, Decision == "Yes" )
+
+## Establishing ordered factor lists.  This will ensure tables and charts are ordered according to level of degree.
+Learners$Degree <- factor(Learners$Degree, levels=c("HS", "Associate", "Bachelor", "Master", "Doctorate"), ordered=TRUE)
+Applicants$Degree <- factor(Applicants$Degree, levels=c("HS", "Associate", "Bachelor", "Master", "Doctorate"), ordered=TRUE)
+
+
+```
+
+## Summary of Application Decisions  
+
+This analysis provides basic quantitative data on learner applicants, including the number of applicants **accepted** by the program, the number who **attended** at least one session, and the number who **completed** the program. The total number of Applicants for all cohorts combined was n=`r nrow(Applicants)`.
+
+**Notes:   **   
+
+* Percent Attended is based on Percent Accepted.
+* Percent Completed is based on Percent Attended.     
+
+
+```{r Application Decision Analysis, message=TRUE, warnings=TRUE, echo=TRUE}
+
+# Initialize the analysis dataframe with the cohort years and number of applicants per year.
+df <- Applicants %>%
+     group_by(Cohort) %>%
+     summarize(n())
+
+# Calculate the total number and percentage of applicants who were accepted to the program by cohort and add columns to dataframe.
+dt <- table(Applicants$Cohort, Applicants$Accepted)
+df <- cbind(df, dt[6:10], dt[6:10]/df[,2])
+
+# Calculate the total number and percentage of applicants who attended the program by cohort and add to dataframe.
+dt <- table(Applicants$Cohort, Applicants$Decision)
+df <- cbind(df, dt[6:10], dt[6:10]/df[,3])
+
+# Calculate the total number and percentage of applicants who completed the program by cohort and add to dataframe.
+dt <- table(Applicants$Cohort, Applicants$Finished)
+df <- cbind(df, dt[6:10], dt[6:10]/df[,5])
+
+# Ensure data table is a dataframe and add column labels.
+df <- as.data.frame(df)
+df[,1] <- NULL   #Removes cohort column, will add later as row labels.
+colnames(df) <- c("n", "Accepted", "%Accepted", "Attended","%Attended", "Completed", "%Completed")
+
+# Calculate column totals and add to bottom of dataframe
+Total = sum(df$n)
+TotalAccepted = sum(df$Accepted)
+PercentAccepted = TotalAccepted/Total
+TotalAttended = sum(df$Attended)
+PercentAttended = TotalAttended/TotalAccepted
+TotalCompleted = sum(df$Completed)
+PercentCompleted = TotalCompleted/TotalAttended
+df <- rbind(df, c(Total, TotalAccepted, PercentAttended, TotalAttended, PercentAttended, TotalCompleted, PercentCompleted))
+nCohort <- df$n
+# Add row labels.
+rownames(df) <- c("2012", "2013", "2014", "2015", "2016", "Totals")
+
+# Store results in results dataframe
+Results <- df
+
+## Print dataframe with applicants attended & completed by cohort.
+kable(Results, digits=2, caption="Applicant Results by Cohort")
+
+```
+
+## Summary of Applicants by Degree
+
+The program recruited primarily from the University of Florida community, so program applicants represent a highly educated population. As you can see from the charts below 90% of participants have a Bachelor or higher degree and 53% of applicants have a graduate degree.
+
+```{r Application by Degree Analysis, message=TRUE, warnings=TRUE, echo=TRUE}
+
+# Extract the Degree information from the Learners data frame.
+Degrees <- select(Applicants, Cohort, Degree)
+Degrees <- Degrees[complete.cases(Degrees),]
+Degrees$Cohort <- factor(Degrees$Cohort, ordered=TRUE)
+Degrees <- as.data.frame(Degrees)
+
+# Find the total number of degrees for the applicants (note NA's should be the 2012 applicants).
+Totals = summary(Degrees$Degree)
+
+# Find the total number of degrees by cohort.
+XT = table(Degrees$Cohort, Degrees$Degree, useNA="ifany")
+XT = rbind(XT, Totals)
+XT = prop.table(XT, margin = 1)
+XT <- apply(XT*100, 2, function(u) sprintf("%.0f%%", u))
+row.names(XT) <- c("2013", "2014", "2015", "2016", "Totals")
+kable(XT, caption="Distribution of Applicants by Highest Degree")
+
+# Plot the Distribution of Applicants by Degree
+#png(filename="degrees.png")  #Uncomment to export graphic to .png file.
+barplot(table(Degrees$Cohort, Degrees$Degree),
+        main="Distribution of Applicants by Highest Degree", font.main=1,
+        xlab="Degrees", 
+        ylab="Frequency", 
+        width=3,
+        ylim=c(0,40),
+        legend = rownames(table(Degrees$Cohort, Degrees$Degree)), 
+        beside=TRUE, 
+        args.legend = list(x = "topleft", bty = "n", title="Cohorts"))
+#dev.off() #Uncomment to export graphic to .png file.
+```
+
+## Marketing Analysis  
+
+This question seeks to learn more about how applicants learned about the program.  Because of the (Check All That Apply) option, the percentages listed in the table below represent the percent of applicants that selected each individual option.   
+
+* How did you hear about the program? (Check All That Apply). 
+     + Program Website
+     + Past Participant
+     + Facebook/Twitter/LinkedIn
+     + Email", "OTL Newsletter
+     + Newspaper Article
+     + Word of Mouth
+     + Other   
+
+```{r Marketing Analysis, message=TRUE, warnings=TRUE, echo=TRUE}
+
+## Create dataframe and add columns corresponding to responses in this quesion. 
+df <- data.frame()
+dt <- table(Applicants$Cohort, Applicants$Q4a, useNA = "no")
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q4b, useNA = "no")
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q4c, useNA = "no")
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q4d, useNA = "no")
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q4e, useNA = "no")
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q4f, useNA = "no")
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q4g, useNA = "no")
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q4h, useNA = "no")
+df <- rbind(df, dt[2:5])
+
+# Add the row totals.
+RTotals <- rowSums(df)
+df = cbind(df, RTotals)
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / nCohort[j+1]
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c(2013:2016, "All Cohorts")
+rownames(Results) <- c("Program Website", "Past Participant","Facebook/Twitter/LinkedIn", "Email", "OTL Newsletter", "Newspaper Article", "Word of Mouth", "Other")
+
+# Display the results.
+kable(Results, padding = 4, caption = "How did you hear about the program?")
+
+```
+
+### Other responses:
+
+These are responses from open ended portion of the other option.  
+
+```{r Q4Other, message=TRUE, warnings=TRUE, echo=TRUE}
+TEXT <- select(Applicants, Cohort, Q4Other)
+TEXT$Q4Other <- as.character(TEXT$Q4Other)
+TEXT <- filter(TEXT, Q4Other > "")
+TEXT <- arrange(TEXT, desc(Cohort))
+kable(TEXT)
+```
+
+## Motivational Analysis  
+
+This questions allowed respondents to click all that apply.  It created a bit of confusion in that some respondents choose individual options and then "All of the above", others only selected "All of the above".  For consistent data analysis, it is assumed that a respondent choosing "All of the above" may have assumed they did not also need to select each of the individual options.  In order for this to tabulate correctly, the data was updated to include a selection for each individual item if "All of the above" was selected. **Note:** There were new answer options were added in 2016. 
+
+* What is your primary goal for participation in the program? (Check All That Apply).
+     + Gain Self-confidence
+     + Start a Company
+     + Networking
+     + Entrepreneurship Training
+     + Attending Seminars/Workshops
+     + Job/Career Opportunities
+     + Valuable knowledge and Skills
+     + Interest in Technology Commercialization
+     + All of the above
+     + Other
+
+```{r Motivational Analysis, message=TRUE, warnings=TRUE, echo=TRUE}
+
+## Create dataframe and add columns corresponding to responses in this quesion. 
+df <- data.frame()
+dt <- table(Applicants$Cohort, Applicants$Q5a)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5b)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5c)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5d)
+df <- rbind(df, dt[2:5]+dt[7:10])
+dt <- table(Applicants$Cohort, Applicants$Q5e)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5h)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5i)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5j)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5f)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q5g)
+df <- rbind(df, dt[2:5])
+
+# Add the row totals.
+RTotals <- rowSums(df)
+df = cbind(df, RTotals)
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+## Remove n(2012) from n(total)
+n <- nCohort
+n[6] <- nCohort[6]-nCohort[1]
+
+## Calculate percentages
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+     proportions[i,j] <- df[i,j] / n[j+1]
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c(2013:2016, "All Cohorts")
+rownames(Results) <- c("Gain Self-confidence", "Start a Company","Networking", "Entrepreneurship Training", "Attending Seminiars/Workshops", "Job/Career Opportunities", "Valuable knowledge and Skills", "Interest in Technology Commercialization", "All of the above", "Other")
+
+# Display the results.
+kable(Results, padding = 4, caption = "What is your primary goal for participation in the program?")
+
+```
+
+### Other responses:   
+
+These are responses from open ended portion of the other option.  
+
+```{r Q5Other, message=TRUE, warnings=TRUE, echo=TRUE}
+TEXT <- select(Applicants, Cohort, Q5Other)
+TEXT$Q5Other <- as.character(TEXT$Q5Other)
+TEXT <- filter(TEXT, Q5Other > "")
+TEXT <- arrange(TEXT, desc(Cohort))
+kable(TEXT)
+```
+
+## Computer Support Analysis  
+Only the first question was asked in 2013. The breakdown of software was added in 2014. The email option was added in 2016.
+
+* Do you have regular access to a computer (Yes/No)?
+* Do you have access to the following software?
+     + Computer
+     + Internet
+     + Microsoft Word
+     + Excel
+     + Power Point
+     + email
+     + Other   
+     
+```{r Computer Support Analysis, message=TRUE, warnings=TRUE, echo=TRUE}
+
+df <- data.frame()
+dt <- table(Applicants$Cohort, Applicants$Q7)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q7a)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q7b)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q7c)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q7d)
+df <- rbind(df, dt[2:5]+dt[7:10])
+dt <- table(Applicants$Cohort, Applicants$Q7e)
+df <- rbind(df, dt[2:5])
+dt <- table(Applicants$Cohort, Applicants$Q7f)
+df <- rbind(df, dt[2:5])
+
+# Add the row totals.
+RTotals <- rowSums(df)
+df = cbind(df, RTotals)
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / nCohort[j+1]
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c(2013:2016, "All Cohorts")
+rownames(Results) <- c("Computer", "Internet", "Microsoft Word","Excel", "Power Point", "Email", "Other")
+
+# Display the results.
+kable(Results, padding = 4, caption = "Applicants Access to Computer Resources")
+```
+
+### Other responses:   
+
+These are responses from open ended portion of the other option. 
+
+```{r Q6Other, message=TRUE, warnings=TRUE, echo=TRUE}
+TEXT <- select(Applicants, Cohort, Q7g)
+TEXT$Q7g <- as.character(TEXT$Q7g)
+TEXT <- filter(TEXT, Q7g > "")
+TEXT <- arrange(TEXT, desc(Cohort))
+kable(TEXT)
+```
+
+## Involvement with other University inventions or patents.
+
+This analysis presents the results from:  
+*Have you been involved with any new discoveries that have been patented by the University?*
+
+```{r Patent Analysis, message=TRUE, warnings=TRUE, echo=TRUE}
+
+df <- data.frame(row.names=c(2012:2016))
+dt <- table(Applicants$Cohort, Applicants$Q8)
+df <- cbind(df, dt[1:5], dt[6:10]+dt[11:15]+dt[16:20])
+colnames(df) <- c("No", "Yes")
+kable(df, digits=2, caption = "Applicants Involvement with University Patents")
+```
+
+*Briefly describe the technology and your affiliation.*    
+
+
+```{r Q8Other, message=TRUE, warnings=TRUE, echo=TRUE}
+TEXT <- select(Applicants, Cohort, Q8a)
+TEXT$Q8a <- as.character(TEXT$Q8a)
+TEXT <- filter(TEXT, Q8a > "")
+TEXT <- arrange(TEXT, desc(Cohort))
+kable(TEXT)
+```

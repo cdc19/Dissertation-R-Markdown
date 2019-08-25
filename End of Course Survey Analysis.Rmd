@@ -1,0 +1,1373 @@
+---
+title: "End of Course Summative Survey Analysis"
+author: "Author: Cheryl Calhoun"
+date: "Last Edit: `r format(Sys.time(), '%d %B, %Y')`"
+header: This is fancy
+footer: So is this
+output:
+  word_document: default
+  pdf_document: null
+  number_sections: yes
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE, echo=TRUE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# List of packages required for this analysis
+pkg <- c("dplyr", "knitr", "devtools", "DT", "xtable", "tidyverse", "psych", "FSA", "lattice", "ggplot2", "plyr", "boot", "rcompanion", "likert", "stringr", "formattable", "ordinal", "car", "RVAideMemoire")
+
+# Check if packages are not installed and assign the
+# names of the packages not installed to the variable new.pkg
+new.pkg <- pkg[!(pkg %in% installed.packages())]
+
+# If there are any packages in the list that aren't installed,
+# install them
+if (length(new.pkg)) {
+  install.packages(new.pkg, repos = "http://cran.rstudio.com")
+}
+
+# Load the packages into R
+library(dplyr)
+library(knitr)
+library(DT)
+library(xtable)
+library(tidyverse)
+library(FSA)
+#library(stringr)
+#library(formattable)
+#library(plyr)
+library(psych)
+library(lattice)
+library(ggplot2)
+library(rcompanion)
+library(likert)
+library(ordinal)
+library(car)
+library(RVAideMemoire)
+
+# Set the working directory to the directory containing the data files.
+setwd("C:/Users/cdcal/OneDrive/GitHub/Dissertation")
+getwd()
+
+
+# Set options for printing tables with kable
+options(knitr.kable.NA = ".",
+        digits=2)
+
+opts_chunk$set(fig.path='figure/minimal-', fig.align='center', fig.show='hold')
+opts_chunk$set(out.width='1000px', dpi=200)
+# options(replace.assign=TRUE,width=120)
+
+```
+
+# Overview
+End of course survey were conducted in all five cohorts.  The survey was designed by program organizers and learners were required to complete the survey prior to entering the investor pitch competition.  Theoretically, all learners completing the course should have completed the survey, however, the number of surveys available are smaller than the number of participants who are designated as completing the course.  
+
+The end of course surveys for Cohorts 2013 - 2015 were provided in the form of scanned copies of the paper surveys. Qualtrics surveys were developed that matched the items in the paper surveys and all surveys were entered. The paper surveys were numbered 1-n and this number is recorded as one of the variables in the data set. This will allow validation of data against the paper survey if needed. The end of course survey for Cohort 2016 was conducted using Survey Monkey and results were provided in electronic format. 
+
+The data from all four cohorts was merged into a single data set so that analysis can be run within each cohort and across cohorts. See "Tidying the Data", for more information on how this data set was merged and prepared for analysis.  
+
+This analysis is based on "Descriptive Statistics for Likert Data", *Summary and Analysis of Extension Program Evaluation in R* by Salvatore S. Mangiafico.  Retrieved from Http://rcompanion.org/handbook/E_02.html on March 10, 2017.   
+
+```{r Loading Data, echo=TRUE}
+
+# Load data file that was created in TidyData.Rmd
+load("data/Summative.Rda")
+
+# Extract descriptive data for analysis.
+Descriptive <- select(Summative, ID, Cohort, Team, Degree, PaperID, 
+                      Discipline, Age, Relationship, Race, Income, Employment)
+
+# Extract qualitative data for analysis.
+Qualitative <- select(Summative, ID, Cohort, Team, Degree, PaperID, 
+                      starts_with("TEXT"))
+
+# Extract ordinal & likert scale data for analysis.
+Ordinal <- select(Summative, ID, Cohort, Team, Degree, Race, Age, Relationship,
+                  Discipline, Employment, Income, PaperID, starts_with("Q"))
+Ordinal$Cohort <- factor(Ordinal$Cohort, ordered=TRUE)
+
+# Extract competency (Before & After) data for analysis.
+# Extracting data for analysis
+Competency <- select(Summative, ID, Cohort, Team, Degree, Race, Age, Relationship,
+                  Discipline, Employment, Income, Q36.1_1:Q16.2_5)
+
+# Extract 2016 data for analysis. These are questions that don't exists in prior cohorts.
+Summative2016 <- select(filter(Summative, Cohort==2016), ID, Cohort, Team, 
+                        Degree, PaperID, starts_with("Q5"))
+
+# Extract teams data for analysis
+Descriptive$Team <- factor(Descriptive$Team, ordered=TRUE)
+Teams <- as.data.frame(summary(Descriptive$Team))
+colnames(Teams) <- c("Total")
+rownames(Teams) <- c(levels(Descriptive$Team), "NA")
+
+# Establish Ordinal Lists
+ScaleL = c("1", "2", "3", "4", "5")
+DegreeL = c("HS", "Associate", "Bachelor", "Master","PhD", "Other")
+CohortL <- c("2013", "2014", "2015", "2016")
+TCohorts <- c("Totals", "2013", "2014", "2015", "2016")
+TimeL <- c("Too Short", "About Right", "Too Long")
+```
+
+# Demographic Analysis
+
+This section will provide a demographic analysis of Cohorts (years), including team (mentor) assignment and maximum earned degree.  In 2015, questions were added to collect information about Discipline, Age, Relationship, Ethnicity, Income, and Employment. 
+
+* There are a total of `r nrow(Summative)` respondents.
+* There are a total of `r nrow(Teams)` teams.
+* The average size of each team is `r mean(Teams$Total, is.na=FALSE)`.
+* The largest team is `r max(Teams$Total, is.na=FALSE, digits=2)`.
+* The smallest team is `r min(Teams$Total, is.na=FALSE)`.
+* The number of respondants per Cohort is `r summary(Summative$Cohort)`.
+ 
+## Education  
+The program specifically recruited women with advanced degrees.  While there are some women who participated with only a HS diploma, those women were specifically selected because of their prior knowledge of and experience in entrepreneurship.  Degree will be used as an independent variable in question analysis to determine if there is any correlation between degree level and program experience as reported in the end of course survey. *Note: This question is also included on the learner application.*
+
+**What is the highest level of education completed? (Circle One)**    
+
+```{r Degrees, echo=TRUE}
+
+# Extract the Degree information from the Learners data frame.
+Degrees <- select(Descriptive, Cohort, Degree)
+Degrees <- Degrees[complete.cases(Degrees),]
+Degrees$Cohort <- factor(Degrees$Cohort, ordered=TRUE)
+Degrees <- as.data.frame(Degrees)
+# Find the total number of degrees for the applicants (note NA's should be the 2012 applicants).
+Totals = summary(Degrees$Degree)
+nCohort = summary(Degrees$Cohort)
+
+# Find the total number of degrees by cohort.
+XT = table(Degrees$Cohort, Degrees$Degree, useNA="ifany")
+XT = rbind(XT, Totals)
+XT = prop.table(XT, margin = 1)
+XT <- apply(XT*100, 2, function(u) sprintf("%.0f%%", u))
+row.names(XT) <- c("2013", "2014", "2015", "2016", "Totals")
+
+kable(XT, padding = 4, caption=" ")
+```
+
+## Disclipline/Expertise 
+
+The program attempted to recruit women from a variety of disciplines.  This was so that program teams would have a variety of expertise that would facilitate the entire business development process.  The data shows the highest percentage of learners come from science and communications disciplines. 
+
+This question was first asked in 2015.   There are some non-respondents and therefore some NAs in this response.  This data will be used as an independent variable in question analysis to determine if there is any correlation between discipline level and program experience as reported in the end of course survey.    
+
+**What is your area of expertise? (Circle One)**   
+
+```{r Disciplines, echo=TRUE}
+# Create Disciplines dataframe
+Disciplines <- select(Descriptive, Cohort, Discipline)
+Disciplines <- Disciplines[complete.cases(Disciplines),]
+Disciplines <- filter(Disciplines, Discipline != "")
+Disciplines$Cohort <- factor(Disciplines$Cohort, ordered=TRUE)
+Disciplines$Discipline <- factor(Disciplines$Discipline, ordered=TRUE)
+Disciplines <- as.data.frame(Disciplines)
+
+# Create Disciplines cross table with Cohort
+df <- bind_cols(
+     as.data.frame(summary(na.omit(Disciplines$Discipline))),
+     as.data.frame.matrix(table(Disciplines$Discipline, Disciplines$Cohort, useNA = "no"))
+     )
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / colSums(df[j])
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+colnames(df) <- c("Total", 2015:2016)
+rownames(df) <- c(levels(Disciplines$Discipline))
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c("Total", 2015:2016)
+rownames(Results) <- c(levels(Disciplines$Discipline))
+
+# Display the results.
+kable(Results, padding = 4, caption=" ")
+
+```
+
+## Age
+
+The program attempted to recruit women with a variety of experience and thus it could be speculated that the ages of the learners would be distributed. Because of the way this question was asked, we are restricted to analyzing the ordinal responses.  If this data had been collected as a numerical response we would have been able to calculate means and other descriptive statistics on the age data. 
+
+**What is your age? (Circle one)**    
+
+```{r Ages, echo=TRUE}
+
+# Create Age dataframe
+Age <- select(Descriptive, Cohort, Age)
+Age <- Age[complete.cases(Age),]
+Age <- filter(Age, Age != "")
+Age$Cohort <- factor(Age$Cohort, ordered=TRUE)
+Age$Age <- factor(Age$Age, ordered=TRUE)
+Age <- as.data.frame(Age)
+
+# Create Age cross table with Cohort
+df <- bind_cols(
+     as.data.frame(summary(na.omit(Age$Age))),
+     as.data.frame.matrix(table(Age$Age, Age$Cohort, useNA = "no"))
+     )
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / colSums(df[j])
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c("Total", "2015", "2016")
+rownames(Results) <- c(levels(Age$Age))
+
+# Display the results.
+kable(Results, padding = 4, caption=" ")
+
+```
+
+## Family Status   
+
+**Circle the answer that best describes your current situation.**   
+
+```{r Relationship, echo=TRUE}
+# Create the Status dataframe
+Status <- select(Descriptive, Cohort, Relationship)
+Status <- Status[complete.cases(Status),]
+Status <- filter(Status, Relationship != "")
+Status$Cohort <- factor(Status$Cohort, ordered=TRUE)
+Status$Relationship <- factor(Status$Relationship, ordered=TRUE)
+Status <- as.data.frame(Status)
+
+# Create Age cross table with Cohort
+df <- bind_cols(
+     as.data.frame(summary(na.omit(Status$Relationship))),
+     as.data.frame.matrix(table(Status$Relationship, Status$Cohort, useNA = "no"))
+     )
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / colSums(df[j])
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c("Total", "2015", "2016")
+rownames(Results) <- c(levels(Status$Relationship))
+
+# Display the results.
+kable(Results, padding = 4, caption=" ")
+```
+
+## Ethnicity/Race  
+
+**Which of the following best represents your racial or ethnic heritage?**   
+
+```{r Ethnicity, echo=TRUE}
+
+# Create the Ethnicity dataframe
+Ethnicity <- select(Descriptive, Cohort, Race)
+Ethnicity <- Ethnicity[complete.cases(Ethnicity),]
+Ethnicity <- filter(Ethnicity, Race != "")
+Ethnicity$Cohort <- factor(Ethnicity$Cohort, ordered=TRUE)
+Ethnicity$Race <- factor(Ethnicity$Race, ordered=TRUE)
+Ethnicity <- as.data.frame(Ethnicity)
+
+# Create Age cross table with Cohort
+df <- bind_cols(
+     as.data.frame(summary(na.omit(Ethnicity$Race))),
+     as.data.frame.matrix(table(Ethnicity$Race, Ethnicity$Cohort, useNA = "no"))
+     )
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / colSums(df[j])
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c("Total", "2015", "2016")
+rownames(Results) <- c(levels(Ethnicity$Race))
+
+# Display the results.
+kable(Results, padding = 4, caption=" ")
+
+```
+
+## Household Income
+
+**What was your total household income before taxes during the past 12 months?**   
+
+```{r Income, echo=TRUE}
+
+# Create income dataframe
+Income <- select(Descriptive, Cohort, Income)
+Income <- Income[complete.cases(Income),]
+Income <- filter(Income, Income != "")
+Income$Cohort <- factor(Income$Cohort, ordered=TRUE)
+Income$Income <- factor(Income$Income, ordered=TRUE)
+Income <- as.data.frame(Income)
+
+# Create Age cross table with Cohort
+df <- bind_cols(
+     as.data.frame(summary(na.omit(Income$Income))),
+     as.data.frame.matrix(table(Income$Income, Income$Cohort, useNA = "no"))
+     )
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / colSums(df[j])
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c("Total", "2015", "2016")
+rownames(Results) <- c(levels(Income$Income))
+
+# Display the results.
+kable(Results, padding = 4, caption=" ")
+```
+
+## Employment 
+
+**Please circle the option(s) that best describe(s) your current situation.  OK to choose more than one if applicable.**     
+  
+```{r Employment, echo=TRUE}
+
+# Create employment dataframe
+Employment <- select(Descriptive, Cohort, Employment)
+Employment <- Employment[complete.cases(Employment),]
+Employment <- filter(Employment, Employment != "")
+Employment$Cohort <- factor(Employment$Cohort, ordered=TRUE)
+Employment$Employment <- factor(Employment$Employment, ordered=TRUE)
+Employment <- as.data.frame(Employment)
+
+# Create Age cross table with Cohort
+df <- bind_cols(
+     as.data.frame(summary(na.omit(Employment$Employment))),
+     as.data.frame.matrix(table(Employment$Employment, Employment$Cohort, useNA = "no"))
+     )
+
+# Create the proportions table
+proportions <- matrix(NA, nrow=nrow(df), ncol=ncol(df))
+proportions <- as.data.frame(proportions)
+
+for(i in 1:nrow(df)) {
+ for(j in 1:ncol(df)) {
+    proportions[i,j] <- df[i,j] / colSums(df[j])
+ }
+}
+
+# Ensure data table is a data frame, add column names and row names, and format for percentages.
+Results <- as.data.frame(apply(proportions*100, 2, function(u) sprintf("%.0f%%", u)))
+colnames(Results) <- c("Total", "2015", "2016")
+rownames(Results) <- c(levels(Employment$Employment))
+
+# Display the results.
+kable(Results, padding = 4, caption=" ")
+```
+
+# Mentor Feedback   
+
+This section consists of three questions based on the team mentor assignment. Respondents self-identified their mentor and then answered the Likert scale question, followed by an open ended qualitative response.
+
+* Q7: Who was your mentor?
+     + Knowledge: How would you rate your mentor's knowledge regarding entrepreneurship? (Likert-Scale (1=poor, 5=Excellent))
+     + Accessiblity: How would you rate your mentor's accessibility outside of the scheduled program meeting hours? (Likert-Scale (1=poor, 5=Excellent))
+     + Overall: How would you rate your mentor overall?  (Likert-Scale (1=poor, 5=Excellent)
+     + TEXT8: Please provide any additional feedback regarding the mentorship experience.
+
+**Responses Across all Cohorts**   
+
+```{r Mentors-likert, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, Knowledge=Q7_1, Accessiblity=Q7_2, Overall=Q7_3)
+
+## Create ordered factors of Likert data, otherwise R will alphabetize them.
+Data$Knowledge = factor(Data$Knowledge, ordered = TRUE, levels = ScaleL)
+Data$Accessiblity = factor(Data$Accessiblity, ordered = TRUE, levels = ScaleL)
+Data$Overall = factor(Data$Overall, ordered = TRUE, levels = ScaleL)
+
+## Verifying the data frame
+#headTail(Data)
+#str(Data)
+# summary(Data)
+
+Result = likert(Data)
+
+## Bar Ploat
+plot(Result, 
+     type="bar",
+     main = "Mentor Feedback by Question",
+     xlab = "Question",
+     ylab = "Responses by Percentage")
+
+```
+
+
+```{r Mentors_Team, echo=TRUE}
+
+# Preparing data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Knowledge=Q7_1, Accessiblity=Q7_2, Overall=Q7_3)
+
+# Combining Q7_1, Q7_2, Q7_2 into one column
+Data <- Data %>%
+     gather(`Knowledge`, `Accessiblity`, `Overall`, key = "Question", value = "Likert")
+
+# Create ordered factors of Likert data
+Data$Likert.f = factor(Data$Likert, 
+                       ordered = TRUE, 
+                       levels = ScaleL)
+
+Data$Team = factor(Data$Team,
+                   levels=unique(Data$Team))
+
+Data$Question = factor(Data$Question,
+                       levels=unique(Data$Question))
+
+Data$ID = factor(Data$ID,
+                 levels=unique(Data$ID))
+
+
+```
+
+**Responses Summarized by Question**
+```{r Mentor-Question, echo=TRUE}
+# Summary treating Likert data as numeric data
+Summarize(Likert ~ Question,
+          data=Data,
+          digits = 3)
+```
+
+**Responses Summarized by Cohort**
+```{r Mentor-Cohort, echo=TRUE, warning=FALSE}
+Summarize(Likert ~ Cohort,
+          data = Data,
+          digits = 3)
+```
+
+**Responses Summarized by Team/Mentor**
+```{r Mentor-Team, echo=TRUE}
+Summarize(Likert ~ Team,
+          data=Data,
+          digits=3)
+```
+
+**Analysis of Variance**   
+From the anova results we can see that Team does have a statistically significant effect on the learners responses.  This could be assumed at this stage because the question is about the team mentor. However, what we don't know if this response is affected by other independent variables.  Now we will look at Cohort, education, and income to see if these variables have an affect on learners responses.
+
+The first analysis is for all four cohorts.  As we can see, both Cohort and Team assignments are statistically significant at the p < .05 level.   
+
+```{r Mentors-Anova, echo=TRUE}
+
+# Preparing data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Degree, Race, Age, Discipline, Employment, Income,
+               Relationship, Q7_1:Q7_3)
+Data <- mutate(Data, sum=Q7_1+Q7_2+Q7_3)
+
+# Checking for statistically significant differences using Anova
+## This analysis is for all 4 cohorts
+Result <- anova(lm(sum~Cohort+Team+Degree,data=Data))
+print(Result)
+```
+
+This analysis is for 2015-2016 using the additional demographic indicators collected beginning in 2015.  
+```{r Mentors-Anova2, echo=TRUE}
+
+# Checking for statistically significant differences using Anova
+## This analysis is for cohors 2015 & 2016 because new demographic indicators were added in 2015
+Data <- filter(Data, Cohort>2014)
+Result <- anova(lm(sum~Cohort+Team+Degree+Age+Race+Discipline+Employment+Income+Relationship,data=Data))
+print(Result)
+
+```
+
+### Qualitative Responses   
+
+This question was paired with a qualitative open ended questions which asked "Please provide any additional feedback regarding the mentorship experience:"  The answers were in line with the scaled responses.
+
+```{r Q8_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. 
+TEXT <- select(Qualitative, Cohort, TEXT8)
+TEXT <- filter(TEXT, TEXT8>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+```
+
+
+#Program Feedback   
+This section contains feedback about the program itself, including program resources and program content.
+
+## Program Resources
+
+* Website: How would you rate the program website in terms of providing information about the program?
+* Library: How helpful was the UF library resources page?
+* Materials: How would you rate access to the program materials on e-Learning in terms of ease of use? (Participant Workbook, Resources, Program Announcements).
+* Videos: How would you rate accessing the videos on e-Learning in terms of use?
+* Forums: How would you rate the Discussion Forums on e-Learning in terms of communicating with your team?
+
+```{r Resources-likert, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, Website=Q9_1, Library=Q9_2, Materials=Q9_3, Videos=Q9_4, Forums=Q9_5)
+
+## Create ordered factors of Likert data
+Data$Website = factor(Data$Website, ordered = TRUE, levels = ScaleL)
+Data$Library = factor(Data$Library, ordered = TRUE, levels = ScaleL)
+Data$Materials = factor(Data$Materials, ordered = TRUE, levels = ScaleL)
+Data$Videos = factor(Data$Videos, ordered = TRUE, levels = ScaleL)
+Data$Forums = factor(Data$Forums, ordered = TRUE, levels = ScaleL)
+
+# Calculate Likert Percentages
+Result = likert(Data)
+
+## Bar Ploat
+plot(Result, type="bar")
+
+```
+
+
+```{r Resources_Team, echo=TRUE}
+
+# Preparing data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Website=Q9_1, Library=Q9_2, Materials=Q9_3, Videos=Q9_4, Forums=Q9_5)
+
+# Combining Q7_1, Q7_2, Q7_2 into one column
+Data <- Data %>%
+     gather(`Website`, `Library`, `Materials`, `Videos`, `Forums`, key = "Question", value = "Likert")
+
+# Create ordered factors of Likert data
+Data$Likert.f = factor(Data$Likert, ordered = TRUE, levels = ScaleL)
+Data$Team = factor(Data$Team, levels=unique(Data$Team))
+Data$Question = factor(Data$Question, levels=unique(Data$Question))
+Data$ID = factor(Data$ID, levels=unique(Data$ID))
+
+```
+
+**Responses Summarized by Question**
+```{r Resources-Question, echo=TRUE}
+# Summary treating Likert data as numeric data
+Summarize(Likert ~ Question,
+          data=Data,
+          digits = 3)
+```
+
+**Responses Summarized by Cohort**
+```{r Resources-Cohort, echo=TRUE, warning=FALSE}
+Summarize(Likert ~ Cohort,
+          data = Data,
+          digits = 3)
+```
+
+**Responses Summarized by Team/Mentor**
+```{r Resources-Team, echo=TRUE}
+Summarize(Likert ~ Team,
+          data=Data,
+          digits=3)
+```
+
+**Analysis of Variance**   
+From the anova results we can see that Team does have a statistically significant effect on the learners responses.  This could be assumed at this stage because the question is about the team mentor. However, what we don't know if this response is affected by other independent variables.  Now we will look at Cohort, education, and income to see if these variables have an affect on learners responses.
+
+```{r Resources-Anova, echo=TRUE}
+
+# Preparing data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Degree, Race, Age, Discipline, Employment, Income, Relationship, Q9_1:Q9_5)
+Data <- mutate(Data, sum=Q9_1+Q9_2+Q9_3+Q9_4+Q9_5)
+
+# Checking for statistically significant differences using Anova
+Result <- anova(lm(sum~Cohort+Team+Degree,data=Data))
+print(Result)
+
+# Checking for statistically significant differences using Anova
+## This analysis is for cohors 2015 & 2016 because new demographic indicators were added in 2015
+#Data <- filter(Data, Cohort>2014)
+#Result <- anova(lm(sum~Cohort+Team+Degree+Age+Race+Discipline+Employment+Income+Relationship,data=Data))
+#print(Result)
+
+```
+
+### Qualitative Responses   
+
+This question was paired with a qualitative open ended questions which asked "Please provide any additional feedback about E-Learning:"  The answers were in line with the scaled responses.
+
+```{r Q9_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. 
+TEXT <- select(Qualitative, Cohort, TEXT10)
+TEXT <- filter(TEXT, TEXT10>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+```
+ 
+
+##Information & Technology Matching Sessions   
+For this analysis I will groups the Information Session & Technology Matching sessions together for analysis.  While these sessions are dissemilar, the analysis is similar and the side by side comparison will allow program organizers to see the differing perceptions of the learners.
+
+* Q1: How helpful was the Informational Session in providing an overview of what the program would encompass? (Likert-Scale (1=poor, 5=Excellent))   
+
+The Information Sessions were held in advance of learners submitting their applications.  These sessions were designed to introduce potential learners to the program, give them a good idea of the content and time commitment for the program, and help them to make an informed decision about program participation. 
+
+* Q4: How would you rate your opportunity to review the technologies during the Technology Matching Session 1? (Likert-Scale (1=poor, 5=Excellent))   
+
+The first session of the educational program is a mentor matching session.  During this session each mentor hosts a table.  The learners are placed in random groups and participate in a "speed dating" style of mentor matching. The groups have an assigned first table and then move from table to table until they have visited all seven tables.  At each table the mentor had 10 minutes to present their technology, discuss their mentoring philosophy and answer any questions.  At the end of the session the learners fill out a matching request indicting their 1st, 2nd, and 3rd choices for mentor/technology team match.
+
+```{r Sessions_Nominal, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, Information=Q1, Technology=Q4)
+
+## Create ordered factors of Likert data
+Data$Information = factor(Data$Information, ordered = TRUE, levels = ScaleL)
+Data$Technology = factor(Data$Technology, ordered = TRUE, levels = ScaleL)
+
+# Calculate Likert Percentages
+Result = likert(Data)
+
+## Bar Ploat
+plot(Result, 
+     type="bar")
+```
+
+```{r Sessions_Numeric, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Information=Q1, Technology=Q4)
+
+# Combining questions into one column
+Data <- Data %>%
+     gather(`Information`, `Technology`, key = "Question", value = "Likert")
+
+## Create ordered factors of Likert data
+Data$ID = factor(Data$ID, levels=unique(Data$ID), ordered = TRUE)
+Data$Cohort = factor(Data$Cohort, levels=unique(Data$Cohort), ordered = TRUE)
+Data$Team = factor(Data$Team, levels=unique(Data$Team), ordered = TRUE)
+Data$Likert.f = factor(Data$Likert, ordered = TRUE, levels = ScaleL)
+Data$Question = factor(Data$Question, levels=unique(Data$Question))
+```
+
+**Responses Summarized by Question**
+```{r Sessions-Question, echo=TRUE, warning=FALSE}
+# Summary treating Likert data as numeric data
+Summarize(Likert ~ Question,
+          data=Data,
+          digits = 3)
+```
+
+**Responses Summarized by Cohort**
+```{r Sessions-Cohort, echo=TRUE, warning=FALSE}
+Summarize(Likert ~ Cohort + Question,
+          data=Data,
+          digits = 3)
+
+ggplot(Data, aes(Likert)) +
+     geom_histogram(binwidth = 1, colour = "white") +
+     facet_grid(Cohort ~ Question, scales = "free", space="free")+
+     theme(strip.text.x = element_text(size=8),
+           strip.text.y = element_text(size=8, face="bold"),
+           strip.background = element_rect(colour="red", fill="#CCCCFF"))
+
+```
+
+** Analysis of Variance**   
+```{r Sessions-Anova, echo=TRUE}
+
+# Preparing data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Degree, Race, Age, Discipline, Employment, Income,
+               Relationship, Q1:Q4)
+Data <- mutate(Data, sum=Q1+Q4)
+
+# Checking for statistically significant differences using Anova
+Result <- anova(lm(sum~Cohort+Team+Degree+Age+Race+Discipline+Employment+Income+Relationship,data=Data))
+print(Result)
+
+```
+
+### Qualitative Responses Information Session  
+
+This question was paired with a qualitative open ended questions which asked "Please include feedback about the Informational Session."  The answers were in line with the scaled responses.  *Note: This qualitative option was not included in the 2016 survey.*
+
+```{r Q2_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. 
+TEXT <- select(Qualitative, Cohort, TEXT2)
+TEXT <- filter(TEXT, TEXT2>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+
+```
+ 
+
+### Qualitative Responses Technology Matching Session
+
+This question was paired with a qualitative open ended questions which asked "Please include feedback about the Technology Matching Session."  The answers were in line with the scaled responses.  Some of the more descriptive responses were:  
+
+```{r Q5_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. 
+TEXT <- select(Qualitative, Cohort, TEXT5)
+TEXT <- filter(TEXT, TEXT5>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+
+```
+ 
+
+## Session Video Presentations    
+
+The curriculum content for each week is delivered via pre-recorded videos. Learners are asked to rate these for Information Provided, Relevance to Project, and Speaker Presentation Skills.  This three part ranking was discontinued in 2016 when learners were only asked to provide one score for each session video. To account for the variance in 3-part vs. 3-part response, this first analysis uses either the mean of the 3-part score or the single 1-part score.
+
+* Please rate the Videos from 1-5 for each category (scale 1=poor, 3=average, 5=excellent)
+     + Q11_1 Session 2: Understanding the Value Proposition (Randy Scott)
+     + Q11_2 Session 2b: Forming the Management Team (John Spence)
+     + Q11_3 Session 3: Market Analysis and Strategy (Karen Zaderej)
+     + Q11_4 Session 4: Commercialization Strategy (John Engels) and Intellectual Property-IP (John Byatt)
+     + Q11_5 Session 5: Financials (Angela Pate) *Was not used in 2016*
+     + Q11_6 Session 5b: Financials Spreadsheet Video (Rebecca Prince) *This video was added in 2015*
+     + Q11_7 Session 6: Company Presentations (Sue Washer)
+     + Q11_7 Session 7: Corporate Structures (John Spence)
+     + Q11_8 Session 8: Sources of Funding (Weaver Gaines)
+     + Q11_9 Session 5: Financials Spreadsheet Video (Rebecca Prince) *This video was added in 2016*
+     
+The question scores which use the three factor ranking are indicated by the "_1", "_2", and "_3" at the end of each question. Ex.Q11_1_1: Information Provided, Q11_1_2: Relevance to Project, Q11_1_3: Speaker Presentation.   
+     
+```{r Videos-Sessions, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Degree, starts_with("Q11"))
+
+# Calculate mean score for years where Presentation, Information and relavancy were separate responses. Used raw score for 2016.
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session2 = mean(c(Q11_1_1, Q11_1_2, Q11_1_3, Q11_1a), na.rm = TRUE))
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session2b = mean(c(Q11_2_1, Q11_2_2, Q11_2_3, Q11_1b), na.rm = TRUE))
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session3 = mean(c(Q11_3_1, Q11_3_2, Q11_3_3, Q11_2), na.rm = TRUE))
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session4 = mean(c(Q11_4_1, Q11_4_2, Q11_4_3, Q11_3), na.rm = TRUE))
+
+# The video for financials switched from Angela Pate to Rebecca Prince in 2015. In 2015 both were shown, in 2016 only Rebecca Prince was shown.
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session5a = mean(c(Q11_5_1, Q11_5_2, Q11_5_3), na.rm = TRUE))
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session5b = mean(c(Q11_9_1, Q11_9_2, Q11_9_3, Q11_4), na.rm = TRUE))
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session6 = mean(c(Q11_6_1, Q11_6_2, Q11_6_3, Q11_5), na.rm = TRUE))
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session7 = mean(c(Q11_7_1, Q11_7_2, Q11_7_3, Q11_6), na.rm = TRUE))
+Data <- Data %>%
+     rowwise() %>%
+     mutate(Session8 = mean(c(Q11_8_1, Q11_8_2, Q11_8_3, Q11_7), na.rm = TRUE))
+
+# Select data for numeric vs ordinal evaluation
+DataS <- select(Data, ID, Cohort, Team, Degree, starts_with("S"))
+DataL <- select(Data, starts_with("S"))
+DataL <- as.data.frame(DataL)
+
+# Convert numberic means back to Likert values for Plot
+DataL$Session2 <- factor(as.integer(DataL$Session2), ordered=TRUE, levels=ScaleL)
+DataL$Session2b <- factor(as.integer(DataL$Session2b), ordered=TRUE, levels=ScaleL)
+DataL$Session3 <- factor(as.integer(DataL$Session3), ordered=TRUE, levels=ScaleL)
+DataL$Session4 <- factor(as.integer(DataL$Session4), ordered=TRUE, levels=ScaleL)
+DataL$Session5 <- factor(as.integer(DataL$Session5a), ordered=TRUE, levels=ScaleL)
+DataL$Session5b <- factor(as.integer(DataL$Session5b), ordered=TRUE, levels=ScaleL)
+DataL$Session6 <- factor(as.integer(DataL$Session6), ordered=TRUE, levels=ScaleL)
+DataL$Session7 <- factor(as.integer(DataL$Session7), ordered=TRUE, levels=ScaleL)
+DataL$Session8 <- factor(as.integer(DataL$Session8), ordered=TRUE, levels=ScaleL)
+
+# Calculate Likert Percentages
+Result = likert(DataL)
+
+## Bar Plot
+plot(Result, type="bar", main="Session 2")
+
+```
+
+```{r Videos, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Degree, starts_with("Q11"))
+
+Information <- select(Data, ID, Cohort, Team, Degree, ends_with("1"))
+Information <- mutate(Information, Type = "Information")
+Information <- Information %>%
+     gather(`Q11_1_1`, `Q11_2_1`, `Q11_3_1`, `Q11_4_1`, `Q11_5_1`, `Q11_6_1`, `Q11_7_1`,
+            `Q11_8_1`, `Q11_9_1`, key = "Question", value = "Likert" )
+
+Relevance <- select(Data, ID,Cohort, Team, Degree, ends_with("2"))
+Relevance <- select(Relevance, -Q11_2)
+Relevance <- mutate(Relevance, Type = "Relevance")
+Relevance <- Relevance %>%
+     gather(`Q11_1_2`, `Q11_2_2`, `Q11_3_2`, `Q11_4_2`, `Q11_5_2`, `Q11_6_2`, `Q11_7_2`,
+            `Q11_8_2`, `Q11_9_2`, key = "Question", value = "Likert" )
+
+Presentation <- select(Data, ID, Cohort, Team, Degree, ends_with("3"))
+Presentation <- select(Presentation, -Q11_3)
+Presentation <- mutate(Presentation, Type = "Presentation")
+Presentation <- Presentation %>%
+     gather(`Q11_1_3`, `Q11_2_3`, `Q11_3_3`, `Q11_4_3`, `Q11_5_3`, `Q11_6_3`, `Q11_7_3`,
+            `Q11_8_3`, `Q11_9_3`, key = "Question", value = "Likert" )
+
+Combined <- select(Data, ID, Cohort, Team, Degree, Q11_1a:Q11_7)
+Combined <- mutate(Combined, Type = "Combined")
+Combined <- Combined %>%
+     gather(`Q11_1a`, `Q11_1b`, `Q11_2`, `Q11_3`, `Q11_4`, `Q11_5`, `Q11_6`, `Q11_7`, key = "Question", value = "Likert" )
+
+Data <- bind_rows(Information, Relevance, Presentation, Combined)
+```
+**Responses Summarized by Question**   
+```{r Videos~Question, echo=TRUE}
+Summarize(Likert ~ Question,
+          data=Data,
+          digits = 3)
+```
+**Responses Sumarized by Type**   
+```{r Videos~Type, echo=TRUE}
+Summarize(Likert ~ Type,
+          data=Data,
+          digits = 3)
+```
+**Responses Summarized by Question**   
+```{r Videos~Cohort, echo=TRUE}
+Summarize(Likert ~ Cohort,
+          data=Data,
+          digits = 3)
+```
+
+**Responses Summarized by Team**  
+```{r Videos~Team, echo=TRUE, eval=FALSE}
+Summarize(Likert ~ Team,
+          data=Data,
+          digits = 3,
+          na.rm = TRUE)
+```
+**Responses Summarized by Degree**  
+```{r Videos~Degree, echo=TRUE}
+Data$Degree <- as.character(Data$Degree)
+Summarize(Likert ~ Degree,
+          data=Data,
+          digits = 3)
+```
+**Responses Summarized by Question & Type**   
+```{r Videos~Question/Type, echo=TRUE}
+Summarize(Likert ~ Question + Type,
+          data=Data,
+          digits = 3)
+
+```
+
+### Additional Feedback Videos   
+
+* Please provide any additional feedback regarding the session videos:
+
+This question was paired with a qualitative open ended questions which asked "Please provide any additional feedback regarding the session videos:"  The answers were in line with the scaled responses.
+
+```{r Q12_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. 
+TEXT <- select(Qualitative, Cohort, TEXT12)
+TEXT <- filter(TEXT, TEXT12>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+```
+  
+
+## Time Allocation
+
+* The time allotted each work for speakers/teamwork was:
+     + Too Short
+     + About Right
+     + Too Long  
+
+```{r Time, echo=TRUE}
+# Extracting data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Speakers = Q13, Teamwork = Q14)
+
+## Combining Q13 & Q14 into one column
+Data <- Data %>%
+     gather(Speakers, Teamwork, key = "Question", value = "Answer")
+
+## Create ordered factors of answer data.
+## Order factor levels, otherwise R will alphabetize them.
+Data$Answer = factor(Data$Answer, ordered = TRUE, levels = TimeL)
+Data$Team = factor(Data$Team, levels=unique(Data$Team))
+Data$Question = factor(Data$Question, levels=unique(Data$Question))
+Data$ID = factor(Data$ID, levels=unique(Data$ID))
+Data$Cohort = factor(Data$Cohort, ordered = TRUE, levels = CohortL)
+
+barplot(table(Data$Answer, Data$Question, useNA = "no"),
+        beside=TRUE,
+        ylim=c(0,125),     # adjust to remove legend overlap
+        xlab="Cohort",
+        ylab="Frequency",
+        args.legend=list(cex=0.75, x = "topleft", bty = "n", title="Degrees"), 
+        cex.names=1,
+        legend.text=c(levels(Data$Answer)),
+        main = "Respondant Degrees by Cohort")
+
+```
+
+
+## General Questions 
+
+* Please rate from 1-5 for each category (scale 1=poor, 3=average, 5=excellent)
+     + Assignments: How clear were the instructions and assignments?
+     + Workbook: How helpful was the Participant Workbook?
+     + Leadership: How helpful was the Leadership Team?
+     + Quality: How would you rate the quality of the training program overall?
+
+```{r General, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, Assignments=Q18_1, Workbook=Q18_2, Leadership=Q18_3, Quality=Q18_4)
+
+## Create ordered factors of Likert data
+Data$Assignments = factor(Data$Assignments, ordered = TRUE, levels = ScaleL)
+Data$Workbook = factor(Data$Workbook,ordered = TRUE, levels = ScaleL)
+Data$Leadership = factor(Data$Leadership,ordered = TRUE, levels = ScaleL)
+Data$Quality = factor(Data$Quality,ordered = TRUE, levels = ScaleL)
+
+# Calculate Likert Percentages
+Result = likert(Data)
+
+## Bar Ploat
+plot(Result, type="bar")
+```
+
+```{r General_Numeric, echo=TRUE}
+
+# Extracting data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Assignments=Q18_1, Workbook=Q18_2, Leadership=Q18_3, Quality=Q18_4)
+
+# Combining questions into one column
+Data <- Data %>%
+     gather(`Assignments`, `Workbook`, `Leadership`, `Quality`, key = "Question", value = "Likert")
+
+## Create ordered factors of Likert data
+Data$ID = factor(Data$ID, levels=unique(Data$ID), ordered = TRUE)
+Data$Cohort = factor(Data$Cohort, levels=unique(Data$Cohort), ordered = TRUE)
+Data$Team = factor(Data$Team, levels=unique(Data$Team), ordered = TRUE)
+Data$Likert.f = factor(Data$Likert, ordered = TRUE, levels = ScaleL)
+Data$Question = factor(Data$Question, levels=unique(Data$Question))
+```
+
+**Responses Summarized by Question**
+```{r General-Question, echo=TRUE, warning=FALSE}
+# Summary treating Likert data as numeric data
+Summarize(Likert ~ Question,
+          data=Data,
+          digits = 3)
+```
+
+**Responses Summarized by Cohort**
+```{r General-Cohort, echo=TRUE, warning=FALSE}
+Summarize(Likert ~ Cohort,
+          data=Data,
+          digits = 3)
+```
+
+** Analysis of Variance**   
+```{r General-Anova, echo=TRUE}
+
+# Preparing data for analysis
+Data <- select(Ordinal, ID, Cohort, Team, Degree, Race, Age, Discipline, Employment, Income,
+               Relationship, Q18_1:Q18_4)
+Data <- mutate(Data, sum=Q18_1+Q18_2+Q18_3+Q18_4)
+
+# Checking for statistically significant differences using Anova
+Result <- anova(lm(sum~Cohort+Team+Degree+Age+Race+Discipline+Employment+Income+Relationship,data=Data))
+print(Result)
+
+```
+
+
+## Overall Session Feedback   
+
+This question was paired with a qualitative open ended questions which asked **"Please provide any additional feedback about the sessions overall?"**  The answers were in line with the scaled responses.
+
+```{r Q35_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. }
+TEXT <- select(Qualitative, Cohort, TEXT35)
+TEXT <- filter(TEXT, TEXT35>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+```
+
+
+## Learner Time Committment
+"Q19 - How many hours a week on average did your team meet outside of the program?
+Would you recommend this program to other women?
+
+**Need to complete this analysis., Fix inconsistencies with scale.**   
+
+```{r Recommendation, echo=TRUE}
+
+# Preparing data for analysis
+Data <- select(Ordinal, ID, Cohort, Q19)
+Data$Question = factor("Q19")
+
+# Fix inconsistency in factor levels
+library(stringr)
+Data$Q19 <- str_replace_all(Data$Q19, "1-2 hours", "1-2 hrs")
+Data$Q19 <- str_replace_all(Data$Q19, "more than 5 hours", "More than 5 hrs")
+Data$Q19 = factor(Data$Q19, ordered = TRUE, levels=c("less than 1 hour", "1-2 hrs", "3-5 hours", "More than 5 hrs"))
+levels(Data$Q19)
+
+# Creating the crosstab of Likert data as nominal data
+XT = xtabs(~ Question + Q19, data=Data)
+
+# Creating report output
+
+barplot(XT,
+        col = gray.colors(1),
+        xlab="Likert score",
+        ylab="Frequency",
+        main="Learner Time Committment")
+
+```
+
+# Overall Program Feedback
+
+This question was paired with a qualitative open ended questions which asked **"What more could the program team do to positively affect perceptions around the barriers to entry?"**  The answers were in line with the scaled responses.
+
+```{r Q17_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. 
+TEXT <- select(Qualitative, Cohort, TEXT17)
+TEXT <- filter(TEXT, TEXT17>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+```
+
+This question was paired with a qualitative open ended questions which asked **"Please share any additional information regarding the program and your experience:"**  The answers were in line with the scaled responses.
+
+```{r Q23_Qualitative, echo=TRUE, results="hide"}
+
+## To preserve the annonymity of participants, the results from this block are hidden. 
+TEXT <- select(Qualitative, Cohort, TEXT23)
+TEXT <- filter(TEXT, TEXT23>"")
+TEXT <- arrange(TEXT, desc(Cohort))
+# `r kable(TEXT)` 
+```
+ 
+
+# Compiling Qualitative Responses
+
+In this analysis, all qualitative data will be compiled and prepared to export to Nvivo for thematic coding and analysis.
+```{r Qualitative_NVIVO, echo = FALSE, eval = FALSE}
+
+# Renamve column headings to be more descriptive
+NVIVO <- rename(Qualitative, eLearning = TEXT10)
+NVIVO <- rename(NVIVO, Information = TEXT2)
+NVIVO <- rename(NVIVO, Matching = TEXT5)
+NVIVO <- rename(NVIVO, Videos = TEXT12)
+NVIVO <- rename(NVIVO, Sessions = TEXT35)
+NVIVO <- rename(NVIVO, Mentors = TEXT8)
+NVIVO <- rename(NVIVO, Barriers = TEXT17)
+NVIVO <- rename(NVIVO, Program = TEXT23)
+NVIVO <- rename(NVIVO, ODiscipline = TEXT29)
+NVIVO <- rename(NVIVO, Anomolies = TEXT26)
+NVIVO <- rename(NVIVO, ODegree = TEXT24)
+
+# Gather Responses into one column
+NVIVO <- NVIVO %>%
+     gather(`eLearning`, `Information`, `Matching`, `Videos`, `Sessions`, `Mentors`, `Barriers`, `Program`, `ODiscipline`, `Anomolies`, `ODegree`, 
+            key = "Question", value = "Response")
+
+NVIVO <- filter(NVIVO, Response>"")
+NVIVO <- arrange(NVIVO, Team, ID) 
+
+# Save responses to file for export into NVIVO.
+write.csv(NVIVO, file="data/QualitativeResponses.csv")
+```
+
+# Competency Analysis
+
+These questions are Likert Scale questions (Circle one for each category. Scale 1=poor, 3=average, 5=excellent) which included two side by side scales.  One for "Before Ewits", and one for "After Ewits".
+
+* Q36: Please rate the following benefits/skills/knowledge levels in terms of how much you feel your participation in the ewits® program has impacted your personal understanding for each area.
+     + Commercialization: The technology commercialization process
+     + Research: How to conduct market research
+     + Plan: How to write a business plan
+     + Presentation: How to develop an investor presentation
+     + Funding: Funding sources for startup businesses
+     
+* Research identifies various barriers to entry for women in assuming leadership positions in technology startups. Please rate the following in terms of how much you feel your participation in the ewits® program has impacted your personal perceived challenge(s).
+     + Support: Support Systems (mentoring, networking)
+     + Confidence: Confidence
+     + RoleModels: Role Models
+     + Initiative: Self-Initiative (ie: not waiting for an invitation)
+     + Balance: Work/Life/Family Balance Issues
+     
+```{r Competencies, echo=TRUE}
+
+# Extracting data for analysis
+Skills <- select(Competency, Commercialization=Q36.2_1, Research=Q36.2_2, Plan=Q36.2_3, Presentation=Q36.2_4, Funding=Q36.2_5)
+Barriers <- select(Competency, Support=Q16.2_1, Confidence=Q16.2_2, RoleModels=Q16.2_3, Initiative=Q16.2_4, Balance=Q16.2_5)
+SkillsBefore <- select(Competency, Commercialization=Q36.1_1, Research=Q36.1_2, Plan=Q36.1_3, Presentation=Q36.1_4, Funding=Q36.1_5)
+BarriersBefore <- select(Competency, Support=Q16.1_1, Confidence=Q16.1_2, RoleModels=Q16.1_3, Initiative=Q16.1_4, Balance=Q16.1_5)
+
+## Create ordered factors of Likert data
+Skills$Commercialization = factor(Skills$Commercialization, ordered = TRUE, levels = ScaleL)
+Skills$Research = factor(Skills$Research,ordered = TRUE, levels = ScaleL)
+Skills$Plan = factor(Skills$Plan,ordered = TRUE, levels = ScaleL)
+Skills$Presentation = factor(Skills$Presentation,ordered = TRUE, levels = ScaleL)
+Skills$Funding = factor(Skills$Funding,ordered = TRUE, levels = ScaleL)
+
+Barriers$Support = factor(Barriers$Support, ordered = TRUE, levels = ScaleL)
+Barriers$Confidence = factor(Barriers$Confidence,ordered = TRUE, levels = ScaleL)
+Barriers$RoleModels = factor(Barriers$RoleModels,ordered = TRUE, levels = ScaleL)
+Barriers$Initiative = factor(Barriers$Initiative,ordered = TRUE, levels = ScaleL)
+Barriers$Balance = factor(Barriers$Balance,ordered = TRUE, levels = ScaleL)
+
+SkillsBefore$Commercialization = factor(SkillsBefore$Commercialization, ordered = TRUE, levels = ScaleL)
+SkillsBefore$Research = factor(SkillsBefore$Research,ordered = TRUE, levels = ScaleL)
+SkillsBefore$Plan = factor(SkillsBefore$Plan,ordered = TRUE, levels = ScaleL)
+SkillsBefore$Presentation = factor(SkillsBefore$Presentation,ordered = TRUE, levels = ScaleL)
+SkillsBefore$Funding = factor(SkillsBefore$Funding,ordered = TRUE, levels = ScaleL)
+
+BarriersBefore$Support = factor(BarriersBefore$Support, ordered = TRUE, levels = ScaleL)
+BarriersBefore$Confidence = factor(BarriersBefore$Confidence,ordered = TRUE, levels = ScaleL)
+BarriersBefore$RoleModels = factor(BarriersBefore$RoleModels,ordered = TRUE, levels = ScaleL)
+BarriersBefore$Initiative = factor(BarriersBefore$Initiative,ordered = TRUE, levels = ScaleL)
+BarriersBefore$Balance = factor(BarriersBefore$Balance,ordered = TRUE, levels = ScaleL)
+
+# Calculate Likert Percentages and produce bar plot.
+
+print("Skills Before Ewits")
+Result = likert(SkillsBefore)
+plot(Result, type="bar", main="Competencies & Skills")
+
+print("Skills After Ewits")
+Result = likert(Skills)
+plot(Result, type="bar", main="Competencies & Skills")
+
+print("Bariers Before Ewits")
+Result = likert(BarriersBefore)
+plot(Result, type="bar", main="Barriers to Participation")
+
+print("Bariers After Ewits")
+Result = likert(Barriers)
+plot(Result, type="bar", main="Barriers to Participation")
+
+## Bar Ploat
+```
+
+```{r Competencies_Numeric, echo=TRUE}
+
+# Extracting data for analysis
+Skills <- 
+     select(Competency, ID, Cohort, Team, Degree, Commercialization=Q36.2_1, Research=Q36.2_2, Plan=Q36.2_3, Presentation=Q36.2_4, Funding=Q36.2_5)
+Barriers <- 
+     select(Competency, ID, Cohort, Team, Degree, Support=Q16.2_1, Confidence=Q16.2_2, RoleModels=Q16.2_3, Initiative=Q16.2_4, Balance=Q16.2_5)
+SkillsBefore <- 
+     select(Competency, ID, Cohort, Team, Degree, Commercialization=Q36.1_1, Research=Q36.1_2, Plan=Q36.1_3, Presentation=Q36.1_4, Funding=Q36.1_5)
+BarriersBefore <- 
+     select(Competency, ID, Cohort, Team, Degree, Support=Q16.1_1, Confidence=Q16.1_2, RoleModels=Q16.1_3, Initiative=Q16.1_4, Balance=Q16.1_5)
+
+# Combining questions into one column
+Skills <- Skills %>%
+     gather(`Commercialization`, `Research`, `Plan`, `Presentation`, `Funding`, key = "Question", value = "After")
+Barriers <- Barriers %>%
+     gather(`Support`, `Confidence`, `RoleModels`, `Initiative`, `Balance`, key = "Question", value = "After")
+SkillsBefore <- SkillsBefore %>%
+     gather(`Commercialization`, `Research`, `Plan`, `Presentation`, `Funding`, key = "Question", value = "Before")
+BarriersBefore <- BarriersBefore %>%
+     gather(`Support`, `Confidence`, `RoleModels`, `Initiative`, `Balance`, key = "Question", value = "Before")
+
+# Join the Before & After data sets
+Skills <- left_join(SkillsBefore, Skills)
+Barriers <- left_join(BarriersBefore, Barriers)
+
+# Adding a change column
+Skills <- mutate(Skills, Change=After-Before)
+Barriers <- mutate(Barriers, Change=After-Before)
+
+# Combining Before & After into one column
+Skills <- Skills %>%
+     gather(`Before`, `After`, key = "When", value = "Likert")
+Barriers <- Barriers %>%
+     gather(`Before`, `After`, key = "When", value = "Likert")
+
+
+## Create ordered factors of Likert data
+Skills$ID = factor(Skills$ID, levels=unique(Skills$ID), ordered = TRUE)
+Skills$Cohort = factor(Skills$Cohort, levels = CohortL, ordered = TRUE)
+Skills$Team = factor(Skills$Team, levels=unique(Skills$Team), ordered = TRUE)
+Skills$Degree = factor(Skills$Degree, levels = DegreeL, ordered=TRUE)
+Skills$Likert.f = factor(Skills$Likert, ordered = TRUE, levels = ScaleL)
+Skills$When = factor(Skills$When, levels=unique(Skills$When))
+Skills$Question = factor(Skills$Question, levels=unique(Skills$Question))
+
+Barriers$ID = factor(Barriers$ID, levels=unique(Barriers$ID), ordered = TRUE)
+Barriers$Cohort = factor(Barriers$Cohort, levels = CohortL, ordered = TRUE)
+Barriers$Team = factor(Barriers$Team, levels=unique(Barriers$Team), ordered = TRUE)
+Barriers$Degree = factor(Barriers$Degree, levels = DegreeL, ordered=TRUE)
+Barriers$Likert.f = factor(Barriers$Likert, ordered = TRUE, levels = ScaleL)
+Barriers$When = factor(Barriers$When, levels=unique(Barriers$When))
+Barriers$Question = factor(Barriers$Question, levels=unique(Barriers$Question))
+
+#Verify still dataframe
+Skills <- as.data.frame(Skills)
+Barriers <- as.data.frame(Barriers)
+```
+
+**Responses Summarized by Question**   
+
+```{r Competencies-Question, echo=TRUE, warning=FALSE}
+# Summary treating Likert data as numeric data
+Summarize(Likert ~ When + Question,
+          data=Skills,
+          digits = 3)
+
+Summarize(Likert ~ When + Question,
+          data=Barriers,
+          digits = 3)
+```
+
+**Analysis of Variance**   
+
+```{r Competencies-Anova, echo=TRUE}
+
+# Checking for statistically significant differences using Anova
+Result <- anova(lm(Likert~When+Cohort,data=Skills))
+print(Result)
+Result <- anova(lm(Likert~When+Cohort,data=Barriers))
+print(Result)
+
+```
+
+```{r Intentions_Numeric, echo=TRUE, eval=FALSE}
+
+# Cohort 2016 has 40 completers, and 42 surveys.
+S2016 <- read.csv("./data/2016_Summative.csv", sep = ",", header = TRUE)
+nrow(S2016)
+
+# Rename ID Column
+S2016 <- rename(S2016, ID = ï..V1)
+
+# Rename Cohort column and factor
+S2016 <- rename(S2016, Cohort = Q1)
+S2016$Cohort <- factor(S2016$Cohort, levels=c("2013", "2014", "2015", "2016"), ordered=TRUE)
+levels = c("entirely disagree", "mostly disagree", "somewhat disagree", "neither agree or disagree", "somewhat agree", "mostly agree", "entirely agree")
+
+S2016 <- select(S2016, ID, Cohort, Q50_1:Q52_6b)
+
+# Extracting data for analysis
+#Skills <- 
+#     select(Competency, ID, Cohort, Team, Degree, Commercialization=Q36.2_1, Research=Q36.2_2, Plan=Q36.2_3, Presentation=Q36.2_4, Funding=Q36.2_5)
+#Barriers <- 
+#     select(Competency, ID, Cohort, Team, Degree, Support=Q16.2_1, Confidence=Q16.2_2, RoleModels=Q16.2_3, Initiative=Q16.2_4, Balance=Q16.2_5)
+#SkillsBefore <- 
+#     select(Competency, ID, Cohort, Team, Degree, Commercialization=Q36.1_1, Research=Q36.1_2, Plan=Q36.1_3, Presentation=Q36.1_4, Funding=Q36.1_5)
+#BarriersBefore <- 
+#     select(Competency, ID, Cohort, Team, Degree, Support=Q16.1_1, Confidence=Q16.1_2, RoleModels=Q16.1_3, Initiative=Q16.1_4, Balance=Q16.1_5)
+
+# Combining questions into one column
+#Skills <- Skills %>%
+#     gather(`Commercialization`, `Research`, `Plan`, `Presentation`, `Funding`, key = "Question", value = "After")
+#Barriers <- Barriers %>%
+#     gather(`Support`, `Confidence`, `RoleModels`, `Initiative`, `Balance`, key = "Question", value = "After")
+#SkillsBefore <- SkillsBefore %>%
+#     gather(`Commercialization`, `Research`, `Plan`, `Presentation`, `Funding`, key = "Question", value = "Before")
+#BarriersBefore <- BarriersBefore %>%
+#     gather(`Support`, `Confidence`, `RoleModels`, `Initiative`, `Balance`, key = "Question", value = "Before")
+
+# Join the Before & After data sets
+#Skills <- left_join(SkillsBefore, Skills)
+#Barriers <- left_join(BarriersBefore, Barriers)
+
+# Adding a change column
+#Skills <- mutate(Skills, Change=After-Before)
+#Barriers <- mutate(Barriers, Change=After-Before)
+
+# Combining Before & After into one column
+#Skills <- Skills %>%
+#     gather(`Before`, `After`, key = "When", value = "Likert")
+#Barriers <- Barriers %>%
+#     gather(`Before`, `After`, key = "When", value = "Likert")
+
+
+## Create ordered factors of Likert data
+#Skills$ID = factor(Skills$ID, levels=unique(Skills$ID), ordered = TRUE)
+#Skills$Cohort = factor(Skills$Cohort, levels = CohortL, ordered = TRUE)
+#Skills$Team = factor(Skills$Team, levels=unique(Skills$Team), ordered = TRUE)
+#Skills$Degree = factor(Skills$Degree, levels = DegreeL, ordered=TRUE)
+#Skills$Likert.f = factor(Skills$Likert, ordered = TRUE, levels = ScaleL)
+#Skills$When = factor(Skills$When, levels=unique(Skills$When))
+#Skills$Question = factor(Skills$Question, levels=unique(Skills$Question))
+#
+#Barriers$ID = factor(Barriers$ID, levels=unique(Barriers$ID), ordered = TRUE)
+#Barriers$Cohort = factor(Barriers$Cohort, levels = CohortL, ordered = TRUE)
+#Barriers$Team = factor(Barriers$Team, levels=unique(Barriers$Team), ordered = TRUE)
+#Barriers$Degree = factor(Barriers$Degree, levels = DegreeL, ordered=TRUE)
+#Barriers$Likert.f = factor(Barriers$Likert, ordered = TRUE, levels = ScaleL)
+#Barriers$When = factor(Barriers$When, levels=unique(Barriers$When))
+#Barriers$Question = factor(Barriers$Question, levels=unique(Barriers$Question))
+
+#Verify still dataframe
+#Skills <- as.data.frame(Skills)
+#Barriers <- as.data.frame(Barriers)
+```
+
+**Responses Summarized by Question**   
+
+```{r Intentions-Question, echo=TRUE, warning=FALSE}
+# Summary treating Likert data as numeric data
+Summarize(Likert ~ When + Question,
+          data=Skills,
+          digits = 3)
+
+Summarize(Likert ~ When + Question,
+          data=Barriers,
+          digits = 3)
+```
+
+**Analysis of Variance**   
+
+```{r Intentions-Anova, echo=TRUE}
+
+# Checking for statistically significant differences using Anova
+Result <- anova(lm(Likert~When+Cohort,data=Skills))
+print(Result)
+Result <- anova(lm(Likert~When+Cohort,data=Barriers))
+print(Result)
+
+```
